@@ -51,7 +51,11 @@ public class PlayerCombat : MonoBehaviour
     public float surfTurnSpeed = 2f;
     public float groundCheckDistance = 0.5f;
     public LayerMask groundMask;
+    public float minSurfSpeed = 5f;  // Minimum speed while surfing
+    public float surfBrakeForce = 0.7f;  // How quickly you slow down when holding back
+    public float surfStrafeForce = 8f;  // How quickly you can move sideways
     private bool isSurfing = false;
+    private float currentSurfSpeed;  // Current forward speed while surfing
 
     // Superpower variables
     private bool hasSuperpower = false;
@@ -882,57 +886,35 @@ public class PlayerCombat : MonoBehaviour
 
     private void HandleSurfingMovement()
     {
+        if (!isSurfing) return;
+
         // Get input
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
         
-        // Create movement direction from input
-        Vector3 inputDirection = new Vector3(horizontal, 0, vertical).normalized;
+        // Handle rotation based on horizontal input
+        transform.Rotate(0, horizontal * surfTurnSpeed * Time.fixedDeltaTime, 0);
         
-        if (inputDirection.magnitude >= 0.1f)
+        // Calculate forward speed based on vertical input (braking)
+        if (vertical < 0)  // Holding back to brake
         {
-            // Gradually rotate the player to face movement direction
-            float targetAngle = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg;
-            float currentAngle = transform.eulerAngles.y;
-            float angle = Mathf.MoveTowardsAngle(currentAngle, targetAngle, surfTurnSpeed * Time.fixedDeltaTime * 90f);
-            transform.rotation = Quaternion.Euler(0f, angle, 0f);
-            
-            // Move in the input direction
-            playerRb.velocity = new Vector3(inputDirection.x * surfSpeed, playerRb.velocity.y, inputDirection.z * surfSpeed);
+            currentSurfSpeed = Mathf.Max(minSurfSpeed, currentSurfSpeed * (1 - surfBrakeForce * Time.fixedDeltaTime));
         }
-        else if (isSurfing)
+        else  // Maintain or build up speed
         {
-            // Maintain forward momentum when no input is given
-            playerRb.velocity = new Vector3(transform.forward.x * surfSpeed, playerRb.velocity.y, transform.forward.z * surfSpeed);
+            currentSurfSpeed = Mathf.Lerp(currentSurfSpeed, surfSpeed, Time.fixedDeltaTime);
         }
-    }
 
-    private void StartSurfing()
-    {
-        if (!isSurfing && isGrounded)
-        {
-            isSurfing = true;
-            
-            // Get current movement input
-            float horizontal = Input.GetAxis("Horizontal");
-            float vertical = Input.GetAxis("Vertical");
-            Vector3 inputDirection = new Vector3(horizontal, 0, vertical).normalized;
-            
-            // If there's no input, start moving forward
-            if (inputDirection.magnitude < 0.1f)
-            {
-                playerRb.velocity = new Vector3(transform.forward.x * surfSpeed, playerRb.velocity.y, transform.forward.z * surfSpeed);
-            }
-            else
-            {
-                // Start moving in input direction
-                float targetAngle = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg;
-                transform.rotation = Quaternion.Euler(0f, targetAngle, 0f);
-                playerRb.velocity = new Vector3(inputDirection.x * surfSpeed, playerRb.velocity.y, inputDirection.z * surfSpeed);
-            }
-            
-            Debug.Log("Started surfing");
-        }
+        // Calculate movement direction
+        Vector3 forwardMovement = transform.forward * currentSurfSpeed;
+        Vector3 strafeMovement = transform.right * horizontal * surfStrafeForce;
+        
+        // Combine forward and strafe movement, maintaining y velocity
+        Vector3 finalVelocity = forwardMovement + strafeMovement;
+        finalVelocity.y = playerRb.velocity.y;
+        
+        // Apply movement
+        playerRb.velocity = finalVelocity;
     }
 
     private void SurfJump()
@@ -941,6 +923,16 @@ public class PlayerCombat : MonoBehaviour
         {
             playerRb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
             isGrounded = false;
+        }
+    }
+
+    private void StartSurfing()
+    {
+        if (!isSurfing && isGrounded)
+        {
+            isSurfing = true;
+            currentSurfSpeed = surfSpeed;  // Start at full speed
+            Debug.Log("Started surfing");
         }
     }
 
